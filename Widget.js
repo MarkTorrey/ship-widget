@@ -1,179 +1,211 @@
-define(['dojo/_base/declare', 'jimu/BaseWidget', 'esri/symbols/SimpleLineSymbol', 'esri/symbols/SimpleFillSymbol', 'esri/Color',
-            'esri/graphic', 'esri/toolbars/edit', 'esri/toolbars/draw', 'dojo/on', 'dojo/dom', 'dojo/_base/event', 'esri/geometry/webMercatorUtils', 'esri/geometry/geometryEngine', 'esri/geometry/Polyline'
-        ],
-        function(declare, BaseWidget, SimpleLineSymbol, SimpleFillSymbol, Color, Graphic, Edit, Draw, on, dom, event, webMercatorUtils, geometryEngine, polyline) {
-            //To create a widget, you need to derive from BaseWidget.
-            return declare([BaseWidget], {
+/*jslint bitwise: true*/
+define([
+  'dojo/_base/declare',
+  'jimu/BaseWidget',
+  'esri/symbols/SimpleLineSymbol',
+  'esri/symbols/SimpleFillSymbol',
+  'esri/Color',
+  'esri/graphic',
+  'esri/toolbars/edit',
+  'esri/toolbars/draw',
+  'dojo/on',
+  'dojo/dom',
+  'dojo/_base/event',
+  'dojo/_base/lang',
+  'esri/geometry/webMercatorUtils',
+  'esri/geometry/geometryEngine',
+  'esri/geometry/Polyline'
+], function (
+  declare,
+  BaseWidget,
+  EsriSimpleLineSymbol,
+  EsriSimpleFillSymbol,
+  EsriColor,
+  EsriGraphic,
+  EsriEditToolBar,
+  EsriDrawToolBar,
+  on,
+  dom,
+  event,
+  dojoLang,
+  webMercatorUtils,
+  geometryEngine,
+  EsriPolyline
+) {
+  return declare([BaseWidget], {
+    baseClass: 'ship-widget',
 
-                // Custom widget code goes here
+    /*
+     * widget constructor
+     */
+    constructor: function () {
+       console.log('Widget Constructor');
+    },
 
-                baseClass: 'ship-widget',
-                // this property is set by the framework when widget is loaded.
-                // name: 'ShipWidget',
-                // add additional properties here
+    /*
+     * Widget Created
+     */
+    postCreate: function() {
+      this.inherited(arguments);
+      console.log('ShipWidget::postCreate');
 
-                //methods to communication with app container:
-                postCreate: function() {
-                    this.inherited(arguments);
-                    console.log('ShipWidget::postCreate');
-                },
+      // get this from config
+      this._fillSymbol = new EsriSimpleFillSymbol(
+        EsriSimpleFillSymbol.STYLE_SOLID,
+        new EsriSimpleLineSymbol(
+          EsriSimpleLineSymbol.STYLE_DASHDOT,
+          new EsriColor([255, 0, 0]), 2
+        ),
+        new EsriColor([255, 255, 0, 0.25])
+      );
 
-                startup: function() {
-                    this.inherited(arguments);
-                    console.log('ShipWidget::startup');
+      this._editToolbar = null;
 
-                    var self = this;
-                    initEditing();
-                    initToolbar();
+      this._drawTool = null;
+    },
 
-                    function initEditing() {
-                        editToolbar = new Edit(self.map);
-                        self.map.graphics.on("click", function(evt) {
-                            event.stop(evt);
-                            activateToolbar(evt.graphic);
-                        });
+    /*
+     * app widget startup event
+     */
+    startup: function() {
+      this.inherited(arguments);
+      console.log('ShipWidget::startup');
 
-                        self.map.on("click", function(evt) {
-                            editToolbar.deactivate();
-                        });
-                    }
+      this.init();
 
-                    function activateToolbar(graphic) {
-                        var edittool = 0;
-                        edittool = edittool | Edit.ROTATE;
-                        edittool = edittool | Edit.MOVE;
-                        editToolbar.activate(edittool, graphic);
-                    }
+    },
 
-                    var fillSymbol = new SimpleFillSymbol(SimpleFillSymbol.STYLE_SOLID,
-                        new SimpleLineSymbol(SimpleLineSymbol.STYLE_DASHDOT,
-                            new Color([255, 0, 0]), 2), new Color([255, 255, 0, 0.25])
-                    );
+    /*
+     * intialize the edit toolbar
+     */
+    activateToolbar: function (graphic) {
+      var edittool = 0;
+      edittool = edittool | EsriEditToolBar.ROTATE;
+      edittool = edittool | EsriEditToolBar.MOVE;
+      this._editToolbar.activate(edittool, graphic);
+    },
 
-                    function initToolbar() {
-                        tb = new Draw(self.map);
-                        tb.on("activate", addGraphic);
+    /*
+     * initialize widget components
+     */
+    init: function () {
+      // intialize edit toolbar
+      this._editToolbar = new EsriEditToolBar(this.map);
 
-                        // event delegation so a click handler is not
-                        // needed for each individual button
-                        on(dom.byId("Ship_Manual"), "click", function(evt) {
-                            self.shipLength = dom.byId("shipLength").value;
-                            self.shipWidth = dom.byId("shipWidth").value;
-                            self.map.disableMapNavigation();
-                            tb.activate("freehandpolygon");
-                        });                                                                  
-                    }
+      this._drawTool = new EsriDrawToolBar(this.map);
 
-					function drawLine(pt1, pt2){
-						var pt1Cor = [pt1[0], pt1[1]];
-						var pt2Cor = [pt2[0], pt2[1]];
-						var lineJSON = {
-							paths: [[pt1Cor, pt2Cor]],
-							spatialReference: {
-                                    "wkid": 102100
-                                }
-						};
-						var line = new polyline(lineJSON);
-						return line;
-					  }
-					
-                    function addGraphic(evt) {
-                        //deactivate the toolbar and clear existing graphics 
-                        tb.deactivate();
-                        self.map.enableMapNavigation();
+      // UI Button click event handler
+      on(
+        dom.byId('Ship_Manual'),
+        'click',
+        dojoLang.hitch(this, this.addShipButtonWasClicked)
+      );
 
-                        var symbol;
-                        symbol = fillSymbol;
+      // draw tool event handler
+      this._drawTool.on(
+        'activate',
+        dojoLang.hitch(this, this.addGraphic)
+      );
 
-                        var centerX = self.map.extent.getCenter().x;
-                        var centerY = self.map.extent.getCenter().y;
-						
-						var centerline = drawLine([centerX,centerY],[centerX + Number(self.shipLength),centerY]);
-						var lineGeodesicLength = geometryEngine.geodesicLength(centerline, "meters");  
-						var ratio = self.shipLength / lineGeodesicLength;
-						
-                        var myPolygon = {
-                            "geometry": {
-                                "rings": [
-                                    [
-                                        [centerX, centerY],
-                                        [centerX + (self.shipLength * 0.005 * ratio), centerY + (self.shipWidth * 0.088 * ratio)],
-                                        [centerX + (self.shipLength * 0.008 * ratio), centerY + (self.shipWidth * 0.123 * ratio)],
-                                        [centerX + (self.shipLength * 0.022 * ratio), centerY + (self.shipWidth * 0.203 * ratio)],
-                                        [centerX + (self.shipLength * 0.045 * ratio), centerY + (self.shipWidth * 0.281 * ratio)],
-                                        [centerX + (self.shipLength * 0.073 * ratio), centerY + (self.shipWidth * 0.357 * ratio)],
-                                        [centerX + (self.shipLength * 0.108 * ratio), centerY + (self.shipWidth * 0.431 * ratio)],
-                                        [centerX + (self.shipLength * 0.150 * ratio), centerY + (self.shipWidth * 0.5 * ratio)],
-                                        [centerX + (self.shipLength * 0.99 * ratio), centerY + (self.shipWidth * 0.5 * ratio)],
-										[centerX + (self.shipLength * 0.995 * ratio), centerY + (self.shipWidth * 0.35 * ratio)],
-                                        [centerX + (self.shipLength * 1 * ratio), centerY + (self.shipWidth * 0.2 * ratio)],
-                                        [centerX + (self.shipLength * 1 * ratio), centerY - (self.shipWidth * 0.2 * ratio)],
-										[centerX + (self.shipLength * 0.995 * ratio), centerY - (self.shipWidth * 0.35 * ratio)],
-                                        [centerX + (self.shipLength * 0.99 * ratio), centerY - (self.shipWidth * 0.5 * ratio)],
-                                        [centerX + (self.shipLength * 0.150 * ratio), centerY - (self.shipWidth * 0.5 * ratio)],
-                                        [centerX + (self.shipLength * 0.108 * ratio), centerY - (self.shipWidth * 0.431 * ratio)],
-                                        [centerX + (self.shipLength * 0.073 * ratio), centerY - (self.shipWidth * 0.357 * ratio)],
-                                        [centerX + (self.shipLength * 0.045 * ratio), centerY - (self.shipWidth * 0.281 * ratio)],
-                                        [centerX + (self.shipLength * 0.022 * ratio), centerY - (self.shipWidth * 0.203 * ratio)],
-                                        [centerX + (self.shipLength * 0.008 * ratio), centerY - (self.shipWidth * 0.123 * ratio)],
-                                        [centerX + (self.shipLength * 0.005 * ratio), centerY - (self.shipWidth * 0.088 * ratio)],
-                                        [centerX, centerY],
-                                    ]
-                                ],
-                                "spatialReference": {
-                                    "wkid": 102100
-                                }
-                            },
-                            "symbol": {
-                                "color": [255, 255, 255, 64],
-                                "outline": {
-                                    "color": [0, 0, 0, 255],
-                                    "width": 1,
-                                    "type": "esriSLS",
-                                    "style": "esriSLSSolid"
-                                },
-                                "type": "esriSFS",
-                                "style": "esriSFSSolid"
-                            }
-                        };
-                   
-                                    self.map.graphics.add(new Graphic(myPolygon));
-                                }
-                            },
+      // listen for map graphic click events
+      this.map.graphics.on(
+        'click',
+        dojoLang.hitch(this, function (evt) {
+          event.stop(evt);
+          this.activateToolbar(evt.graphic);
+        })
+      );
 
-                            // onOpen: function(){
-                            //   console.log('ShipWidget::onOpen');
-                            // },
+      // listen for map click events
+      this.map.on(
+        'click',
+        dojoLang.hitch(this, function (evt) {
+          this._editToolbar.deactivate();
+        })
+      );
+    },
 
-                            // onClose: function(){
-                            //   console.log('ShipWidget::onClose');
-                            // },
+    /*
+     * kick off add ship work
+     */
+    addShipButtonWasClicked: function () {
+      this.shipLength = dom.byId('shipLength').value;
+      this.shipWidth = dom.byId('shipWidth').value;
+      this.map.disableMapNavigation();
+      this._drawTool.activate('freehandpolygon');
+    },
 
-                            // onMinimize: function(){
-                            //   console.log('ShipWidget::onMinimize');
-                            // },
+    /*
+     * create a line object from given points
+     */
+    drawLine: function (pt1, pt2) {
+      var pt1Cor = [pt1[0], pt1[1]];
+      var pt2Cor = [pt2[0], pt2[1]];
+      var lineJSON = {
+        paths: [[pt1Cor, pt2Cor]],
+        spatialReference: {'wkid': 102100}
+      };
 
-                            // onMaximize: function(){
-                            //   console.log('ShipWidget::onMaximize');
-                            // },
+      var line = new EsriPolyline(lineJSON);
+      return line;
+    },
 
-                            // onSignIn: function(credential){
-                            //   console.log('ShipWidget::onSignIn', credential);
-                            // },
+    /*
+     * place graphic shape on the map
+     */
+    addGraphic: function (evt) {
+        //deactivate the toolbar and clear existing graphics
+        this._drawTool.deactivate();
+        this.map.enableMapNavigation();
 
-                            // onSignOut: function(){
-                            //   console.log('ShipWidget::onSignOut');
-                            // }
+        var centerX = this.map.extent.getCenter().x;
+        var centerY = this.map.extent.getCenter().y;
 
-                            // onPositionChange: function(){
-                            //   console.log('ShipWidget::onPositionChange');
-                            // },
+        var centerline = this.drawLine([centerX ,centerY], [centerX + Number(this.shipLength), centerY]);
+        var lineGeodesicLength = geometryEngine.geodesicLength(centerline, 'meters');
+        var ratio = this.shipLength / lineGeodesicLength;
 
-                            // resize: function(){
-                            //   console.log('ShipWidget::resize');
-                            // }
-
-
-                    });
-
-            });
+        var myPolygon = {
+          'geometry': {
+            'rings': [[
+              [centerX, centerY],
+              [centerX + (this.shipLength * 0.005 * ratio), centerY + (this.shipWidth * 0.088 * ratio)],
+              [centerX + (this.shipLength * 0.008 * ratio), centerY + (this.shipWidth * 0.123 * ratio)],
+              [centerX + (this.shipLength * 0.022 * ratio), centerY + (this.shipWidth * 0.203 * ratio)],
+              [centerX + (this.shipLength * 0.045 * ratio), centerY + (this.shipWidth * 0.281 * ratio)],
+              [centerX + (this.shipLength * 0.073 * ratio), centerY + (this.shipWidth * 0.357 * ratio)],
+              [centerX + (this.shipLength * 0.108 * ratio), centerY + (this.shipWidth * 0.431 * ratio)],
+              [centerX + (this.shipLength * 0.150 * ratio), centerY + (this.shipWidth * 0.5 * ratio)],
+              [centerX + (this.shipLength * 0.99 * ratio), centerY + (this.shipWidth * 0.5 * ratio)],
+              [centerX + (this.shipLength * 0.995 * ratio), centerY + (this.shipWidth * 0.35 * ratio)],
+              [centerX + (this.shipLength * 1 * ratio), centerY + (this.shipWidth * 0.2 * ratio)],
+              [centerX + (this.shipLength * 1 * ratio), centerY - (this.shipWidth * 0.2 * ratio)],
+              [centerX + (this.shipLength * 0.995 * ratio), centerY - (this.shipWidth * 0.35 * ratio)],
+              [centerX + (this.shipLength * 0.99 * ratio), centerY - (this.shipWidth * 0.5 * ratio)],
+              [centerX + (this.shipLength * 0.150 * ratio), centerY - (this.shipWidth * 0.5 * ratio)],
+              [centerX + (this.shipLength * 0.108 * ratio), centerY - (this.shipWidth * 0.431 * ratio)],
+              [centerX + (this.shipLength * 0.073 * ratio), centerY - (this.shipWidth * 0.357 * ratio)],
+              [centerX + (this.shipLength * 0.045 * ratio), centerY - (this.shipWidth * 0.281 * ratio)],
+              [centerX + (this.shipLength * 0.022 * ratio), centerY - (this.shipWidth * 0.203 * ratio)],
+              [centerX + (this.shipLength * 0.008 * ratio), centerY - (this.shipWidth * 0.123 * ratio)],
+              [centerX + (this.shipLength * 0.005 * ratio), centerY - (this.shipWidth * 0.088 * ratio)],
+              [centerX, centerY]
+            ]],
+            'spatialReference': {'wkid': 102100}
+          },
+          'symbol': {
+            'color': [255, 255, 255, 64],
+            'outline': {
+              'color': [0, 0, 0, 255],
+              'width': 1,
+              'type': 'esriSLS',
+              'style': 'esriSLSSolid'
+            },
+            'type': 'esriSFS',
+            'style': 'esriSFSSolid'
+          }
+        };
+        this.map.graphics.add(new EsriGraphic(myPolygon));
+      }
+  });
+});
